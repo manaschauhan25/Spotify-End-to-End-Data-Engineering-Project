@@ -1,0 +1,61 @@
+{
+	"name": "Dim_Pipeline",
+	"properties": {
+		"activities": [
+			{
+				"name": "Get_Latest_Data",
+				"type": "Lookup",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureSqlSource",
+						"sqlReaderQuery": {
+							"value": "@SELECT * from @{pipeline().parameters.table}.@{pipeline().parameters.table} where @{pipeline().parameters.cdc_col} > max_datetime",
+							"type": "Expression"
+						},
+						"queryTimeout": "02:00:00",
+						"partitionOption": "None"
+					},
+					"dataset": {
+						"referenceName": "source_sql_ds",
+						"type": "DatasetReference",
+						"parameters": {
+							"schema": {
+								"value": "@pipeline().parameters.schema",
+								"type": "Expression"
+							},
+							"table": {
+								"value": "@pipeline().parameters.table",
+								"type": "Expression"
+							},
+							"cdc_col": {
+								"value": "@pipeline().parameters.cdc_col",
+								"type": "Expression"
+							}
+						}
+					}
+				}
+			}
+		],
+		"parameters": {
+			"schema": {
+				"type": "string"
+			},
+			"table": {
+				"type": "string"
+			},
+			"cdc_col": {
+				"type": "string"
+			}
+		},
+		"annotations": []
+	}
+}

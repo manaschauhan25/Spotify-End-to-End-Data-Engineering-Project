@@ -1,0 +1,33 @@
+{
+	"$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentParameters.json#",
+	"contentVersion": "1.0.0.0",
+	"parameters": {
+		"factoryName": {
+			"value": "spotifydatafactoryv2"
+		},
+		"adls_ls_accountKey": {
+			"value": ""
+		},
+		"source_sql_ls_password": {
+			"value": ""
+		},
+		"adls_ls_properties_typeProperties_url": {
+			"value": "https://spotifydatastoragev1.dfs.core.windows.net/"
+		},
+		"source_sql_ls_properties_typeProperties_server": {
+			"value": "spotifysql.database.windows.net"
+		},
+		"source_sql_ls_properties_typeProperties_database": {
+			"value": "spotifydb"
+		},
+		"source_sql_ls_properties_typeProperties_userName": {
+			"value": "adminmanas"
+		},
+		"containerUri": {
+			"value": ""
+		},
+		"containerSasToken": {
+			"value": ""
+		}
+	}
+}

@@ -25,7 +25,7 @@
 					"source": {
 						"type": "AzureSqlSource",
 						"sqlReaderQuery": {
-							"value": "SELECT * from @{pipeline().parameters.schema}.@{pipeline().parameters.table} where @{pipeline().parameters.cdc_col} > @{activity('Last_CDC').output.value[0].cdc}",
+							"value": "SELECT count(*) as count \nFROM @{pipeline().parameters.schema}.@{pipeline().parameters.table} \nWHERE @{pipeline().parameters.cdc_col} > '@{if(empty(pipeline().parameters.from_date), activity('Last_CDC').output.value[0].cdc, pipeline().parameters.from_date)}'\n",
 							"type": "Expression"
 						},
 						"queryTimeout": "02:00:00",
@@ -81,8 +81,14 @@
 						"referenceName": "cdc_json_ds",
 						"type": "DatasetReference",
 						"parameters": {
-							"container": "bronze",
-							"directory": "user/cdc",
+							"container": {
+								"value": "@pipeline().parameters.container_name",
+								"type": "Expression"
+							},
+							"directory": {
+								"value": "@pipeline().parameters.cdc_directory",
+								"type": "Expression"
+							},
 							"file": "cdc.json"
 						}
 					},
@@ -90,7 +96,7 @@
 				}
 			},
 			{
-				"name": "If Condition1",
+				"name": "Check Latest Data",
 				"type": "IfCondition",
 				"dependsOn": [
 					{
@@ -103,12 +109,12 @@
 				"userProperties": [],
 				"typeProperties": {
 					"expression": {
-						"value": "@greater(activity('Get_Latest_Data').output.count, 0)",
+						"value": "@greater(activity('Get_Latest_Data').output.value[0].count, 0)",
 						"type": "Expression"
 					},
 					"ifFalseActivities": [
 						{
-							"name": "Check_Latest_data",
+							"name": "204_Failure_No_New_Data",
 							"type": "Fail",
 							"dependsOn": [],
 							"userProperties": [],
@@ -135,7 +141,7 @@
 								"source": {
 									"type": "AzureSqlSource",
 									"sqlReaderQuery": {
-										"value": "SELECT * from @{pipeline().parameters.schema}.@{pipeline().parameters.table} where @{pipeline().parameters.cdc_col} > @{activity('Last_CDC').output.value[0].cdc}",
+										"value": "SELECT count(*) as count \nFROM @{pipeline().parameters.schema}.@{pipeline().parameters.table} \nWHERE @{pipeline().parameters.cdc_col} > '@{if(empty(pipeline().parameters.from_date), activity('Last_CDC').output.value[0].cdc, pipeline().parameters.from_date)}'\n",
 										"type": "Expression"
 									},
 									"queryTimeout": "02:00:00",
@@ -185,8 +191,14 @@
 									"referenceName": "adls_sink_ds",
 									"type": "DatasetReference",
 									"parameters": {
-										"container": "bronze",
-										"directory": "user/data",
+										"container": {
+											"value": "@pipeline().parameters.container_name",
+											"type": "Expression"
+										},
+										"directory": {
+											"value": "@pipeline().parameters.data_directory",
+											"type": "Expression"
+										},
 										"file": {
 											"value": "@concat(pipeline().parameters.table,'_', utcNow())",
 											"type": "Expression"
@@ -198,9 +210,100 @@
 						{
 							"name": "update_last_doc",
 							"type": "Copy",
-							"state": "Inactive",
-							"onInactiveMarkAs": "Succeeded",
-							"dependsOn": [],
+							"dependsOn": [
+								{
+									"activity": "Max_CDC",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"source": {
+									"type": "JsonSource",
+									"additionalColumns": [
+										{
+											"name": "cdc",
+											"value": {
+												"value": "@activity('Max_CDC').output.value[0].max_cdc_date",
+												"type": "Expression"
+											}
+										}
+									],
+									"storeSettings": {
+										"type": "AzureBlobFSReadSettings",
+										"recursive": true,
+										"enablePartitionDiscovery": false
+									},
+									"formatSettings": {
+										"type": "JsonReadSettings"
+									}
+								},
+								"sink": {
+									"type": "JsonSink",
+									"storeSettings": {
+										"type": "AzureBlobFSWriteSettings"
+									},
+									"formatSettings": {
+										"type": "JsonWriteSettings"
+									}
+								},
+								"enableStaging": false
+							},
+							"inputs": [
+								{
+									"referenceName": "cdc_json_ds",
+									"type": "DatasetReference",
+									"parameters": {
+										"container": {
+											"value": "@pipeline().parameters.container_name",
+											"type": "Expression"
+										},
+										"directory": {
+											"value": "@pipeline().parameters.cdc_directory",
+											"type": "Expression"
+										},
+										"file": "empty.json"
+									}
+								}
+							],
+							"outputs": [
+								{
+									"referenceName": "cdc_json_ds",
+									"type": "DatasetReference",
+									"parameters": {
+										"container": {
+											"value": "@pipeline().parameters.container_name",
+											"type": "Expression"
+										},
+										"directory": {
+											"value": "@pipeline().parameters.cdc_directory",
+											"type": "Expression"
+										},
+										"file": "cdc.json"
+									}
+								}
+							]
+						},
+						{
+							"name": "Max_CDC",
+							"type": "Lookup",
+							"dependsOn": [
+								{
+									"activity": "SQL_to_ADLS_User",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
 							"policy": {
 								"timeout": "0.12:00:00",
 								"retry": 0,
@@ -212,97 +315,32 @@
 							"typeProperties": {
 								"source": {
 									"type": "AzureSqlSource",
-									"additionalColumns": [
-										{
-											"name": "cdc",
-											"value": {
-												"value": "@activity('Get_Latest_Data').output.value",
-												"type": "Expression"
-											}
-										}
-									],
+									"sqlReaderQuery": {
+										"value": "SELECT max(@{pipeline().parameters.cdc_col}) as max_cdc_date from @{pipeline().parameters.schema}.@{pipeline().parameters.table}",
+										"type": "Expression"
+									},
 									"queryTimeout": "02:00:00",
 									"partitionOption": "None"
 								},
-								"sink": {
-									"type": "ParquetSink",
-									"storeSettings": {
-										"type": "AzureBlobFSWriteSettings"
-									},
-									"formatSettings": {
-										"type": "ParquetWriteSettings"
-									}
-								},
-								"enableStaging": false,
-								"translator": {
-									"type": "TabularTranslator",
-									"typeConversion": true,
-									"typeConversionSettings": {
-										"allowDataTruncation": true,
-										"treatBooleanAsNumber": false
-									}
-								}
-							},
-							"inputs": [
-								{
+								"dataset": {
 									"referenceName": "source_sql_ds",
 									"type": "DatasetReference",
 									"parameters": {
 										"schema": {
-											"value": "bronze",
+											"value": "@pipeline().parameters.schema",
 											"type": "Expression"
 										},
-										"table": "user/cdc",
-										"cdc_col": "empty.json"
-									}
-								}
-							],
-							"outputs": [
-								{
-									"referenceName": "adls_sink_ds",
-									"type": "DatasetReference",
-									"parameters": {
-										"container": "bronze",
-										"directory": "user/cdc",
-										"file": "cdc.json"
-									}
-								}
-							]
-						},
-						{
-							"name": "Script1",
-							"type": "Script",
-							"dependsOn": [
-								{
-									"activity": "Set variable1",
-									"dependencyConditions": [
-										"Succeeded"
-									]
-								}
-							],
-							"policy": {
-								"timeout": "0.12:00:00",
-								"retry": 0,
-								"retryIntervalInSeconds": 30,
-								"secureOutput": false,
-								"secureInput": false
-							},
-							"userProperties": [],
-							"linkedServiceName": {
-								"referenceName": "source_sql_ls",
-								"type": "LinkedServiceReference"
-							},
-							"typeProperties": {
-								"scripts": [
-									{
-										"type": "Query",
-										"text": {
-											"value": "@variables('schema')",
+										"table": {
+											"value": "@pipeline().parameters.table",
+											"type": "Expression"
+										},
+										"cdc_col": {
+											"value": "@pipeline().parameters.cdc_col",
 											"type": "Expression"
 										}
 									}
-								],
-								"scriptBlockExecutionTimeout": "02:00:00"
+								},
+								"firstRowOnly": false
 							}
 						},
 						{
@@ -310,7 +348,7 @@
 							"type": "SetVariable",
 							"dependsOn": [
 								{
-									"activity": "SQL_to_ADLS_User",
+									"activity": "Max_CDC",
 									"dependencyConditions": [
 										"Succeeded"
 									]
@@ -322,57 +360,9 @@
 							},
 							"userProperties": [],
 							"typeProperties": {
-								"variableName": "schema",
+								"variableName": "temp",
 								"value": {
-									"value": "@concat('SELECT max(', pipeline().parameters.cdc_col, ') FROM [', pipeline().parameters.schema, '].[', pipeline().parameters.table, ']')\n",
-									"type": "Expression"
-								}
-							}
-						},
-						{
-							"name": "Set variable1_copy1",
-							"type": "SetVariable",
-							"dependsOn": [
-								{
-									"activity": "SQL_to_ADLS_User",
-									"dependencyConditions": [
-										"Succeeded"
-									]
-								}
-							],
-							"policy": {
-								"secureOutput": false,
-								"secureInput": false
-							},
-							"userProperties": [],
-							"typeProperties": {
-								"variableName": "cdc",
-								"value": {
-									"value": "@pipeline().parameters.cdc_col",
-									"type": "Expression"
-								}
-							}
-						},
-						{
-							"name": "Set variable1_copy2",
-							"type": "SetVariable",
-							"dependsOn": [
-								{
-									"activity": "SQL_to_ADLS_User",
-									"dependencyConditions": [
-										"Succeeded"
-									]
-								}
-							],
-							"policy": {
-								"secureOutput": false,
-								"secureInput": false
-							},
-							"userProperties": [],
-							"typeProperties": {
-								"variableName": "table",
-								"value": {
-									"value": "@pipeline().parameters.table",
+									"value": "@activity('Max_CDC').output.value[0].max_cdc_date",
 									"type": "Expression"
 								}
 							}
@@ -393,6 +383,18 @@
 			"cdc_col": {
 				"type": "string",
 				"defaultValue": "updated_at"
+			},
+			"from_date": {
+				"type": "string"
+			},
+			"container_name": {
+				"type": "string"
+			},
+			"data_directory": {
+				"type": "string"
+			},
+			"cdc_directory": {
+				"type": "string"
 			}
 		},
 		"variables": {

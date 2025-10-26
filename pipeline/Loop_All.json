@@ -1,0 +1,113 @@
+{
+	"name": "Loop_All",
+	"properties": {
+		"activities": [
+			{
+				"name": "Looping Tables",
+				"type": "ForEach",
+				"dependsOn": [
+					{
+						"activity": "Lookup and Get Metadata",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@activity('Lookup and Get Metadata').output.value",
+						"type": "Expression"
+					},
+					"isSequential": false,
+					"activities": [
+						{
+							"name": "Metadatadriven Pipeline",
+							"type": "ExecutePipeline",
+							"dependsOn": [],
+							"policy": {
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"pipeline": {
+									"referenceName": "Dim_Pipeline",
+									"type": "PipelineReference"
+								},
+								"waitOnCompletion": true,
+								"parameters": {
+									"schema": {
+										"value": "@item().schema",
+										"type": "Expression"
+									},
+									"table": {
+										"value": "@item().table",
+										"type": "Expression"
+									},
+									"cdc_col": {
+										"value": "@item().cdc_col",
+										"type": "Expression"
+									},
+									"container_name": {
+										"value": "@item().container_name",
+										"type": "Expression"
+									},
+									"data_directory": {
+										"value": "@item().data_directory",
+										"type": "Expression"
+									},
+									"cdc_directory": {
+										"value": "@item().cdc_directory",
+										"type": "Expression"
+									}
+								}
+							}
+						}
+					]
+				}
+			},
+			{
+				"name": "Lookup and Get Metadata",
+				"type": "Lookup",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "JsonSource",
+						"storeSettings": {
+							"type": "AzureBlobFSReadSettings",
+							"recursive": true,
+							"enablePartitionDiscovery": false
+						},
+						"formatSettings": {
+							"type": "JsonReadSettings"
+						}
+					},
+					"dataset": {
+						"referenceName": "cdc_json_ds",
+						"type": "DatasetReference",
+						"parameters": {
+							"container": "metadata",
+							"directory": "source_metadata",
+							"file": "metadata.json"
+						}
+					},
+					"firstRowOnly": false
+				}
+			}
+		],
+		"variables": {
+			"temp": {
+				"type": "String"
+			}
+		},
+		"annotations": []
+	}
+}

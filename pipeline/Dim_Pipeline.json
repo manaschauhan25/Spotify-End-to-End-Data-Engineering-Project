@@ -141,7 +141,7 @@
 								"source": {
 									"type": "AzureSqlSource",
 									"sqlReaderQuery": {
-										"value": "SELECT count(*) as count \nFROM @{pipeline().parameters.schema}.@{pipeline().parameters.table} \nWHERE @{pipeline().parameters.cdc_col} > '@{if(empty(pipeline().parameters.from_date), activity('Last_CDC').output.value[0].cdc, pipeline().parameters.from_date)}'\n",
+										"value": "SELECT * \nFROM @{pipeline().parameters.schema}.@{pipeline().parameters.table} \nWHERE @{pipeline().parameters.cdc_col} > '@{if(empty(pipeline().parameters.from_date), activity('Last_CDC').output.value[0].cdc, pipeline().parameters.from_date)}'\n",
 										"type": "Expression"
 									},
 									"queryTimeout": "02:00:00",
